@@ -78,9 +78,7 @@ def normalize_header(value):
 
 def load_csv(file_storage):
     """Validate, clean and replace sales using either revenue or quantity × unit price − discount."""
-    df = pd.read_csv(
-    BASE_DIR / "ai_bi_assistant_sales_data - GET.csv"
-)
+    df = pd.read_csv(file_storage)
     if df.empty:
         raise ValueError("The CSV has no data rows.")
     original_columns = {normalize_header(c): c for c in df.columns}
