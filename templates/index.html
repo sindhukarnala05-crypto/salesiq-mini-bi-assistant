@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SalesIQ · Business Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-icon">S</div><div><strong>SalesIQ</strong><small>INTELLIGENCE STUDIO</small></div></div>
+    <div class="nav-label">WORKSPACE</div>
+    <a class="nav-item active" href="#"><span>▦</span> Overview</a>
+    <a class="nav-item" href="#ask-panel"><span>✧</span> Ask your data</a>
+    <a class="nav-item" href="#trend-panel"><span>⌁</span> Sales analytics</a>
+    <div class="sidebar-bottom"><div class="status-dot"></div><div><b>Local analytics</b><small>Connected to SQLite</small></div></div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div><div class="eyebrow">BUSINESS INTELLIGENCE / OVERVIEW</div><h1>Sales overview</h1><p class="muted">Turn your transaction data into clear business decisions.</p></div>
+      <div class="top-actions"><span class="live-pill"><i></i> Database connected</span><div class="avatar">BI</div></div>
+    </header>
+
+    <section class="kpis">
+      <article class="kpi"><div class="kpi-top"><span>Total revenue</span><span class="kpi-icon purple">$</span></div><div class="kpi-value" id="revenue">—</div><div class="kpi-foot">Calculated from all valid transactions</div></article>
+      <article class="kpi"><div class="kpi-top"><span>Transactions</span><span class="kpi-icon blue">↗</span></div><div class="kpi-value" id="transactions">—</div><div class="kpi-foot">Rows in the sales database</div></article>
+      <article class="kpi"><div class="kpi-top"><span>Products</span><span class="kpi-icon orange">◇</span></div><div class="kpi-value" id="products">—</div><div class="kpi-foot">Distinct products represented</div></article>
+      <article class="kpi"><div class="kpi-top"><span>Regions</span><span class="kpi-icon green">◎</span></div><div class="kpi-value" id="regions">—</div><div class="kpi-foot">Distinct sales regions</div></article>
+    </section>
+
+    <section class="content-grid">
+      <article class="panel ask-panel" id="ask-panel">
+        <div class="panel-heading"><div><div class="eyebrow">AI-ASSISTED ANALYTICS</div><h2>Ask your sales data</h2><p class="muted">Ask a question in plain English. Every answer is calculated from SQLite.</p></div><span class="sparkle">✦</span></div>
+        <form id="question-form">
+          <label for="question">YOUR QUESTION</label>
+          <div class="ask-input"><span>✧</span><input id="question" maxlength="500" placeholder="e.g. Which product generated the highest revenue?" required><button type="submit">Analyze <span>→</span></button></div>
+        </form>
+        <div class="suggestions"><span>TRY ASKING</span>
+          <button data-question="What is the total revenue?">Total revenue</button>
+          <button data-question="Which product generated the highest revenue?">Top product</button>
+          <button data-question="What is the monthly revenue trend?">Monthly trend</button>
+          <button data-question="Which region generated the highest sales?">Top region</button>
+          <button data-question="How did revenue change between 2025-01 and 2025-02?">Compare months</button>
+        </div>
+        <div id="result" class="result hidden" aria-live="polite"></div>
+      </article>
+
+      <article class="panel trend-panel" id="trend-panel">
+        <div class="panel-heading"><div><div class="eyebrow">PERFORMANCE</div><h2>Revenue over time</h2></div><span class="chart-tag">Monthly</span></div>
+        <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+        <p class="chart-note">Monthly totals are grouped from transaction dates in the database.</p>
+      </article>
+    </section>
+
+    <section class="panel upload-panel">
+      <div class="upload-copy"><div class="upload-symbol">⇧</div><div><h2>Use your own sales data</h2><p class="muted">Import the CSV supplied by your company. Company CSV supported: date, product, region, quantity, unit price, discount and status.</p></div></div>
+      <form id="upload-form" class="upload-form"><input type="file" id="csv-file" accept=".csv" required><button type="submit" class="secondary-btn">Import CSV</button></form>
+      <div id="upload-status" class="upload-status" aria-live="polite"></div>
+    </section>
+
+    <footer><span>SalesIQ · Mini Business Intelligence Assistant</span><span>Python · Flask · SQLite · Pandas</span></footer>
+  </main>
+  <script>
+    let trendChart;
+    const money = n => new Intl.NumberFormat('en-US', {style:'currency', currency:'USD', maximumFractionDigits:2}).format(Number(n || 0));
+    async function loadSummary() {
+      const response = await fetch('/api/summary');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not load dashboard.');
+      document.getElementById('revenue').textContent = money(data.revenue);
+      document.getElementById('transactions').textContent = Number(data.transactions).toLocaleString();
+      document.getElementById('products').textContent = data.products;
+      document.getElementById('regions').textContent = data.regions;
+      const ctx = document.getElementById('trendChart');
+      if (trendChart) trendChart.destroy();
+      if (typeof Chart !== 'undefined') {
+        trendChart = new Chart(ctx, {
+          type: 'line',
+          data: { labels: data.trend.map(r=>r.month), datasets: [{
+            label:'Revenue', data:data.trend.map(r=>r.revenue), borderColor:'#7566ee',
+            backgroundColor:'rgba(117,102,238,.12)', fill:true, tension:.35,
+            pointRadius:4, pointBackgroundColor:'#7566ee', borderWidth:3
+          }]},
+          options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+            scales:{x:{grid:{display:false}, ticks:{color:'#7b8194'}},y:{beginAtZero:true,grid:{color:'#edf0f6'},ticks:{color:'#7b8194', callback:v=>'$'+v.toLocaleString()}}}}
+        });
+      }
+    }
+    function renderResult(data) {
+      const el = document.getElementById('result');
+      if (data.error) { el.className='result error'; el.innerHTML='<strong>Could not answer that</strong><p></p>'; el.querySelector('p').textContent=data.error; return; }
+      el.className='result';
+      const title=document.createElement('div'); title.className='result-title'; title.textContent='VERIFIED ANSWER';
+      const answer=document.createElement('p'); answer.className='answer-text'; answer.textContent=data.answer;
+      const evidenceTitle=document.createElement('div'); evidenceTitle.className='evidence-title'; evidenceTitle.textContent='Supporting figures';
+      const table=document.createElement('table'); table.className='evidence-table';
+      const rows=data.evidence || [];
+      if(rows.length) {
+        const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+        const thead=document.createElement('thead'), tr=document.createElement('tr');
+        keys.forEach(k=>{const th=document.createElement('th'); th.textContent=k.replaceAll('_',' '); tr.appendChild(th);});
+        thead.appendChild(tr); table.appendChild(thead);
+        const tbody=document.createElement('tbody');
+        rows.forEach(row=>{const tr=document.createElement('tr'); keys.forEach(k=>{const td=document.createElement('td');  const val = row[k];
+td.textContent = (val === undefined || val === null)
+  ? '—'
+  : (typeof val === 'number' && /revenue|change/i.test(k))
+    ? money(val)
+    : String(val); tr.appendChild(td);});tbody.appendChild(tr);});
+        table.appendChild(tbody);
+      }
+      const source=document.createElement('div'); source.className='query-note'; source.textContent='Method: '+(data.sql_label || 'Deterministic database query')+' · Read-only query';
+      el.replaceChildren(title,answer,evidenceTitle,table,source);
+    }
+    document.getElementById('question-form').addEventListener('submit', async e=>{
+      e.preventDefault(); const q=document.getElementById('question').value.trim();
+      const result=document.getElementById('result'); result.className='result'; result.textContent='Analyzing your question…';
+      try {const res=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});renderResult(await res.json());}
+      catch(err){renderResult({error:'Could not reach the API. Check that Flask is running.'});}
+    });
+    document.querySelectorAll('[data-question]').forEach(btn=>btn.addEventListener('click',()=>{document.getElementById('question').value=btn.dataset.question;document.getElementById('question-form').requestSubmit();}));
+    document.getElementById('upload-form').addEventListener('submit', async e=>{
+      e.preventDefault();const file=document.getElementById('csv-file').files[0];const status=document.getElementById('upload-status');
+      if(!file)return;status.textContent='Importing and validating CSV…';status.className='upload-status';
+      const fd=new FormData();fd.append('file',file);
+      try{const res=await fetch('/api/upload',{method:'POST',body:fd});const data=await res.json();status.textContent=res.ok?`${data.message} Loaded ${data.loaded} records; removed ${data.removed} invalid rows.`:(data.error||'Import failed.');status.className='upload-status '+(res.ok?'success':'failure');if(res.ok){await loadSummary();document.getElementById('result').className='result hidden';}}
+      catch(err){status.textContent='Could not reach the server.';status.className='upload-status failure';}
+    });
+    loadSummary().catch(e=>console.error(e));
+  </script>
+</body>
+</html>
