@@ -4,6 +4,12 @@ import sqlite3
 import pandas as pd
 import re
 from pathlib import Path
+import os
+import json
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "sales.db"
@@ -304,6 +310,36 @@ def month_candidates(question):
     return months
 
 
+
+def classify_question_with_ai(question):
+    """Use OpenAI to interpret a question without generating SQL."""
+    if not os.getenv("OPENAI_API_KEY"):
+        return None
+
+    try:
+        client = OpenAI()
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            instructions=(
+                "Classify the user's sales analytics question. "
+                "Return exactly one label: total_revenue, top_product, "
+                "top_region, monthly_trend, month_comparison, or unknown. "
+                "Do not calculate figures or write SQL."
+            ),
+            input=question
+        )
+
+        intent = response.output_text.strip().lower()
+        allowed = {
+            "total_revenue", "top_product", "top_region",
+            "monthly_trend", "month_comparison", "unknown"
+        }
+        return intent if intent in allowed else None
+
+    except Exception:
+        app.logger.exception("OpenAI classification failed")
+        return None
+
 def answer_question(question):
     if not isinstance(question, str) or not question.strip():
         return {"error": "Please enter a question."}, 400
@@ -314,6 +350,23 @@ def answer_question(question):
         }, 400
 
     q = question.lower().strip()
+        # Reject database-changing requests before calling the AI.
+    if any(word in q for word in [
+        "drop table", "delete from", "truncate",
+        "update sales", "insert into", "alter table"
+    ]):
+        return {"error": "Database-changing requests are not allowed."}, 400
+
+    ai_intent = classify_question_with_ai(question)
+
+    if ai_intent == "total_revenue":
+        q = "total revenue"
+    elif ai_intent == "top_product":
+        q = "highest revenue product"
+    elif ai_intent == "top_region":
+        q = "highest sales region"
+    elif ai_intent == "monthly_trend":
+        q = "monthly revenue trend"
 
     forbidden = [
         "drop table", "delete from", "truncate",
